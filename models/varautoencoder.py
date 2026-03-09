@@ -102,7 +102,7 @@ class VAE(nn.Module):
         return reparameterize(mu, log_var), mu, log_var #Only returns Z value and mu, var_log.
 
 def elbo_loss(recon, target, mu, log_var, beta=1.0):
-    """Here recon_loss is a mix of mse and ssim loss to check not just pixel to pixel difference but also semantic differences"""
+    #Here recon_loss is a mix of mse and ssim loss to check not just pixel to pixel difference but also semantic differences
     recon_loss = 1.0*nn.functional.mse_loss(recon, target, reduction='sum')/target.size(0) +  0.5*(1 - ssim(recon, target)) #Calculate Reconstruction Loss
     kl_loss = -0.5*torch.sum(1 + log_var - mu.pow(2) - log_var.exp())/target.size(0) #Calculate KL Divergence Loss
 
