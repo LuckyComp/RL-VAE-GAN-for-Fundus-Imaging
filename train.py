@@ -54,11 +54,7 @@ if __name__ == "__main__":
 
     print(f"Training on {DEVICE}")
 
-    train_loader, val_loader = get_dataloaders(
-        "./data/fundus",
-        batch_size  = 16,
-        num_workers = 4
-    )
+    train_loader, val_loader, test_loader = get_dataloaders("Raw_datasets/A. RFMiD_All_Classes_Dataset/1. Original Images", batch_size=8, num_workers=0)
 
     model     = VAE().to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
