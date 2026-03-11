@@ -80,5 +80,5 @@ if __name__ == "__main__":
                 f"Val Loss={val_loss:.2f} (Recon={val_recon:.2f}, KL={val_kl:.2f})"
             )
 
-    torch.save(model.encoder.state_dict(), "encoder_pretrained.pth")
+    torch.save(model.encoder.state_dict(), "models/saved/encoder_pretrained.pth")
     print("Training complete. Encoder saved.")
