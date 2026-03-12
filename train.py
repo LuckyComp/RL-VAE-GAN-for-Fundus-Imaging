@@ -2,7 +2,10 @@ from models.varautoencoder import VAE, kl_annealing, elbo_loss
 from dataloader import get_dataloaders
 import torch.optim as optim
 import torch.cuda
+from dotenv import load_dotenv
 
+load_dotenv()
+DATASET_PATH = os.getenv("DATASET_PATH")
 
 def train_one_epoch(model, loader, optimizer, beta, device): # per epoch training process
     model.train() #set model to train mode
@@ -56,7 +59,7 @@ if __name__ == "__main__":
 
     print(f"Training on {DEVICE}")
 
-    train_loader, val_loader, test_loader = get_dataloaders("./Raw_datasets/A. RFMiD_All_Classes_Dataset/1. Original Images", batch_size=8, num_workers=4) #set up the data loaders for train, test and validation
+    train_loader, val_loader, test_loader = get_dataloaders(DATASET_PATH, batch_size=8, num_workers=4) #set up the data loaders for train, test and validation
 
     model     = VAE().to(DEVICE) #load model to GPU memory
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE) #initialize optimizer

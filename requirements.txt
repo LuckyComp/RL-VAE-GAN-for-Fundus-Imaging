@@ -1,2 +1,3 @@
 pytorch-msssim
 opencv-python
+python-dotenv
