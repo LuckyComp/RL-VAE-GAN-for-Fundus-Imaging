@@ -1,2 +1,5 @@
 venv
 Raw_datasets
+.env
+__pycache__/
+models/__pycache__/
