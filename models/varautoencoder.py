@@ -21,19 +21,19 @@ class Encoder(nn.Module):
     def __init__(self, in_channels=3, latent_dim=256, base_channels=64):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, base_channels, 4, 2, padding=1), #Block 1
+            nn.Conv2d(in_channels, base_channels, 4, stride=2, padding=1), #Block 1
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels),
 
-            nn.Conv2d(base_channels, base_channels*2, 4, 2, padding=1), #Block 2
+            nn.Conv2d(base_channels, base_channels*2, 4, stride=2, padding=1), #Block 2
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels*2),
 
-            nn.Conv2d(base_channels*2, base_channels*4, 4, 2, padding=1), #Block 3
+            nn.Conv2d(base_channels*2, base_channels*4, 4, stride=2, padding=1), #Block 3
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels*4),
 
-            nn.Conv2d(base_channels*4, base_channels*8, 4, 2, padding=1), #Block 4
+            nn.Conv2d(base_channels*4, base_channels*8, 4, stride=2, padding=1), #Block 4
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels*8)
         )
@@ -43,7 +43,7 @@ class Encoder(nn.Module):
         self.fc_mu = nn.Linear(flat_dim, latent_dim) #Calculates mean of guassian distribution
         self.fc_log_var = nn.Linear(flat_dim, latent_dim) #Calculates +ve variance values using log_var
 
-    def forward(self):
+    def forward(self, x):
         x = self.encoder(x)
         x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1) #Resizes from 3D vector to 1D vector of size 8192
@@ -59,22 +59,24 @@ class Decoder(nn.Module):
         super().__init__()
         self.base_channels = base_channels
         self.decode = nn.Sequential(
-            nn.ConvTranspose2d(base_channels*8, base_channels*4, 4, 2, padding=1), #Upscale Block 1
+            nn.Upsample(scale_factor=4, mode="bilinear", align_corners=False),
+            
+            nn.ConvTranspose2d(base_channels*8, base_channels*4, 4, stride=2, padding=1), #Upscale Block 1
             nn.BatchNorm2d(base_channels*4),
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels*4),
 
-            nn.ConvTranspose2d(base_channels*4, base_channels*2, 4, 2, padding=1), #Upscale Block 2
+            nn.ConvTranspose2d(base_channels*4, base_channels*2, 4, stride=2, padding=1), #Upscale Block 2
             nn.BatchNorm2d(base_channels*2),
             nn.LeakyReLU(0.2, True),
-            ResidualBlock(base_channels*4), 
+            ResidualBlock(base_channels*2), 
 
-            nn.ConvTranspose2d(base_channels*2, base_channels, 4, 2, padding=1), #Upscale Block 3
+            nn.ConvTranspose2d(base_channels*2, base_channels, 4, stride=2, padding=1), #Upscale Block 3
             nn.BatchNorm2d(base_channels),
             nn.LeakyReLU(0.2, True),
             ResidualBlock(base_channels),
 
-            nn.ConvTranspose2d(base_channels, out_channels, 4, 2, padding=1), #Upscale to out_channels
+            nn.ConvTranspose2d(base_channels, out_channels, 4, stride=2, padding=1), #Upscale to out_channels
             nn.Tanh() #Get output in range of [-1, 1]
         )
         flat_dim = base_channels * 8 * 4 * 4
@@ -103,8 +105,8 @@ class VAE(nn.Module):
 
 def elbo_loss(recon, target, mu, log_var, beta=1.0):
     #Here recon_loss is a mix of mse and ssim loss to check not just pixel to pixel difference but also semantic differences
-    recon_loss = 1.0*nn.functional.mse_loss(recon, target, reduction='sum')/target.size(0) +  0.5*(1 - ssim(recon, target)) #Calculate Reconstruction Loss
-    kl_loss = -0.5*torch.sum(1 + log_var - mu.pow(2) - log_var.exp())/target.size(0) #Calculate KL Divergence Loss
+    recon_loss = 1.0*nn.functional.mse_loss(recon, target, reduction='mean') +  0.5*(1 - ssim(recon, target)) #Calculate Reconstruction Loss
+    kl_loss = -0.5*torch.mean(1 + log_var - mu.pow(2) - log_var.exp()) #Calculate KL Divergence Loss
 
     return recon_loss + beta*kl_loss, recon_loss, kl_loss #Return ELBO Loss
 
