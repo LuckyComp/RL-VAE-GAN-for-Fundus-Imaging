@@ -1,8 +1,28 @@
+import torch
 import os
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 
+def get_data_stats(image_dir, image_size=256):
+    transform = T.Compose([T.Resize((image_size, image_size)), T.ToTensor()])
+
+    paths = [
+        os.path.join(image_dir, f) for f in os.listdir(image_dir)
+        if f.lower().endswith((".jpg", ".png", ".jpeg"))
+    ]
+
+    mean, std = torch.zeros(3), torch.zeros(3)
+
+    for p in paths:
+        img = transform(Image.open(p).convert("RGB"))
+        mean += img.mean(dim=[1, 2])
+        std += img.std(dim=[1,2])
+    
+    mean /= len(paths)
+    std /= len(paths)
+    print(f"Data mean:{mean:>4}|standard deviation:{std}")
+    return mean.tolist(), std.tolist()
 
 class FundusDataset(Dataset):
     def __init__(self, image_dir, image_size=256, mode="train"):
