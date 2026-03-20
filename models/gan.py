@@ -130,4 +130,12 @@ class PerceptualLoss(nn.Module):
         synth_features = self.feature_extractor(synthetic)
         return nn.functional.mse_loss(real_features, synth_features)
 
+def generator_loss(disc_preds, synthetic_data, real_data, vgg_loss_fn, lambda_percept=0.006):
+    adversarial_loss = nn.functional.binary_cross_entropy(disc_preds, torch.ones_like(disc_preds))
+    percept_loss = vgg_loss_fn(real_data, synthetic_data)
+    return adversarial_loss + lambda_percept*percept_loss, adversarial_loss, percept_loss
 
+def discriminator_loss(real_preds, synth_preds):
+    real_loss = nn.functional.binary_cross_entropy(real_preds, torch.ones_like(real_preds))
+    synth_loss = nn.functional.binary_cross_entropy(synth_preds, torch.ones_like(synth_preds))
+    return (real_loss + synth_loss)/2
