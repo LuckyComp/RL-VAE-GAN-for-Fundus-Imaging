@@ -75,4 +75,59 @@ class Generator(nn.Module):
 
         return self.output_conv(x)
 
+class Discriminator(nn.Module):
+    def __init__(self, base_channels:int=64):
+        super().__init__()
+
+        def conv_block(in_channels:int, out_channels:int, stride:int):
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 3, stride, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.LeakyReLU(0.2, inplace=True)
+            )
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3, base_channels, 3, stride=1, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            conv_block(base_channels, base_channels, 2),
+            conv_block(base_channels, base_channels*2, 1),
+            conv_block(base_channels*2, base_channels*2, 2),
+            conv_block(base_channels*2, base_channels*4, 1),
+            conv_block(base_channels*4, base_channels*4, 2),
+            conv_block(base_channels*4, base_channels*8, 1),
+            conv_block(base_channels*8, base_channels*8, 2),
+            conv_block(base_channels*8, base_channels*8, 2),
+            conv_block(base_channels*8, base_channels*8, 2)
+        )
+
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((4,4)),
+            nn.Flatten(),
+            nn.Linear(base_channels * 8 * 4 * 4, 1024),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(1024, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return self.classifier(x)
+
+class PerceptualLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        vgg = models.vgg19(weights=models.VGG19_Weights.IMAGENET1K_V1)
+        self.feature_extractor = nn.Sequential(
+                *list(vgg.features)[:36]
+        ).eval()
+
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False
+
+    def forward(self, real, synthetic):
+        real_features = self.feature_extractor(real)
+        synth_features = self.feature_extractor(synthetic)
+        return nn.functional.mse_loss(real_features, synth_features)
+
 
