@@ -35,7 +35,7 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         batch = batch.to(device)
 
         with torch.no_grad():
-            z, _, _ = encoder.encode(batch)
+            z, _, _ = encoder(batch)
 
         synthetic = generator(z) 
 

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torchvision.models import models
+import torchvision.models as models
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels:int = 64):
@@ -20,7 +20,7 @@ class PixelShuffleLayer(nn.Module):
     def __init__(self, in_channels:int = 64, scale_factor:int = 2):
         super().__init__()
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels*(scale**2), 3, padding=1),
+            nn.Conv2d(in_channels, in_channels*(scale_factor**2), 3, padding=1),
             nn.PixelShuffle(scale_factor),
             nn.PReLU()
         )
@@ -52,7 +52,7 @@ class Generator(nn.Module):
         )
 
         self.upsample = nn.Sequential(
-            *[PixelShuffleBlock(self.base_channels, 2) for _ in range(self.number_of_pixel_shuffles)]
+            *[PixelShuffleLayer(self.base_channels, 2) for _ in range(self.number_of_pixel_shuffles)]
         )
 
         self.output_conv = nn.Sequential(
