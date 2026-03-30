@@ -1,5 +1,5 @@
 from models.gan import Generator, Discriminator, PerceptualLoss, generator_loss, discriminator_loss
-from models.varautoencoder import Encoder
+from models.varautoencoder import Encoder, reparameterize
 from dataloader import get_dataloaders
 import torch
 import torch.optim as optim
@@ -35,7 +35,8 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         batch = batch.to(device)
 
         with torch.no_grad():
-            z, _, _ = encoder(batch)
+            mu, log_var = encoder(batch)
+            z = reparameterize(mu, log_var)
 
         synthetic = generator(z) 
 
@@ -64,8 +65,8 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         total_adv_loss   += adv_loss.item()
         total_perc_loss  += perc_loss.item()
         total_real_preds += real_preds.mean().item() 
-        total_synth_preds += fake_preds.mean().item() 
-        n = len(loader) #number of batches
+        total_synth_preds += synth_preds.mean().item() 
+    n = len(loader) #number of batches
     return (
         total_g_loss     / n,
         total_d_loss     / n,

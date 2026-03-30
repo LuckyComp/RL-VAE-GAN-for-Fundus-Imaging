@@ -26,7 +26,7 @@ class PixelShuffleLayer(nn.Module):
         )
 
     def forward(self, x):
-        self.block(x)
+        return self.block(x)
 
 class Generator(nn.Module):
     def __init__(self, latent_dim:int = 256, base_channels:int = 64):
