@@ -12,3 +12,9 @@ synthetic_dataset
 .json
 test_scripts
 inference_outputs
+Dataset Eye/
+checkpoints/
+samples/
+*.pth
+*.pt
+*.png
