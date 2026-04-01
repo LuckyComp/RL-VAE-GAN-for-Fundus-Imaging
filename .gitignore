@@ -5,3 +5,8 @@ __pycache__/
 models/__pycache__/
 models/saved/
 Dataset Eye/
+checkpoints/
+samples/
+*.pth
+*.pt
+*.png
