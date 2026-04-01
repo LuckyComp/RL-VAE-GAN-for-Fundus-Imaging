@@ -1,5 +1,5 @@
 from models.gan import Generator, Discriminator, PerceptualLoss, generator_loss, discriminator_loss
-from models.varautoencoder import Encoder
+from models.varautoencoder import Encoder, reparameterize
 from dataloader import get_dataloaders
 import torch
 import torch.optim as optim
@@ -13,7 +13,7 @@ ENCODER_PATH  = os.getenv("ENCODER_PATH")
 
 def load_encoder(encoder_path, device):
     encoder = Encoder().to(device)
-    encoder.load_state_dict(torch.load(encoder_path, map_location=device))
+    encoder.load_state_dict(torch.load(encoder_path, map_location=device, weights_only=True))
     for param in encoder.parameters():
         param.requires_grad = False 
     encoder.eval()
@@ -35,7 +35,8 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         batch = batch.to(device)
 
         with torch.no_grad():
-            z, _, _ = encoder(batch)
+            mu, log_var = encoder(batch)
+            z = reparameterize(mu, log_var)
 
         synthetic = generator(z) 
 
@@ -64,8 +65,12 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         total_adv_loss   += adv_loss.item()
         total_perc_loss  += perc_loss.item()
         total_real_preds += real_preds.mean().item() 
-        total_synth_preds += fake_preds.mean().item() 
+        total_synth_preds += synth_preds.mean().item() 
+<<<<<<< Updated upstream
+    n = len(loader) #number of batches
+=======
         n = len(loader) #number of batches
+>>>>>>> Stashed changes
     return (
         total_g_loss     / n,
         total_d_loss     / n,
@@ -86,7 +91,12 @@ def val_one_epoch(encoder, generator, discriminator, perceptual_loss_fn, loader,
         for batch in loader:
             batch = batch.to(device) 
 
-            z, _, _  = encoder.encode(batch) 
+<<<<<<< Updated upstream
+            mu, log_var  = encoder(batch)
+=======
+            mu, log_var = encoder(batch)
+>>>>>>> Stashed changes
+            z = reparameterize(mu, log_var)
             synthetic = generator(z)    
 
             real_preds = discriminator(batch)
@@ -114,7 +124,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader, _ = get_dataloaders(
         DATASET_PATH,
-        batch_size  = 16,
+        batch_size  = 8,
         num_workers = 4
     )
 
