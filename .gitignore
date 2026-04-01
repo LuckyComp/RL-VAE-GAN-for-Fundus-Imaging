@@ -5,4 +5,10 @@ Raw_datasets
 __pycache__/
 models/__pycache__/
 models/saved/
-Dataset Eye/
+synthetic_dataset
+.python-version
+.pt
+.pth
+.json
+test_scripts
+inference_outputs

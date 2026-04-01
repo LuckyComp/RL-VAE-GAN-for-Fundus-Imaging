@@ -66,11 +66,7 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
         total_perc_loss  += perc_loss.item()
         total_real_preds += real_preds.mean().item() 
         total_synth_preds += synth_preds.mean().item() 
-<<<<<<< Updated upstream
     n = len(loader) #number of batches
-=======
-        n = len(loader) #number of batches
->>>>>>> Stashed changes
     return (
         total_g_loss     / n,
         total_d_loss     / n,
@@ -91,11 +87,7 @@ def val_one_epoch(encoder, generator, discriminator, perceptual_loss_fn, loader,
         for batch in loader:
             batch = batch.to(device) 
 
-<<<<<<< Updated upstream
-            mu, log_var  = encoder(batch)
-=======
             mu, log_var = encoder(batch)
->>>>>>> Stashed changes
             z = reparameterize(mu, log_var)
             synthetic = generator(z)    
 
