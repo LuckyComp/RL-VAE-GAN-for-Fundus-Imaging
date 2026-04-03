@@ -3,6 +3,7 @@ import os
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
+from dotenv import load_dotenv
 
 def get_data_stats(image_dir, image_size=256):
     transform = T.Compose([T.Resize((image_size, image_size)), T.ToTensor()])
@@ -21,7 +22,6 @@ def get_data_stats(image_dir, image_size=256):
     
     mean /= len(paths)
     std /= len(paths)
-    print(f"Data mean:{mean:>4}|standard deviation:{std}")
     return mean.tolist(), std.tolist()
 
 class FundusDataset(Dataset):
@@ -31,22 +31,25 @@ class FundusDataset(Dataset):
             for f in os.listdir(image_dir)
             if f.lower().endswith((".jpg", ".jpeg", ".png"))
         ])
+        
+        self.data_mean, self.data_std = os.getenv("MEAN"), os.getenv("STD")
+        print(f"Data Stats Loaded:\nMean: {self.data_mean}\nStandard Deviation: {self.data_std}")
 
         if mode == "train":
             self.transforms = T.Compose([
                 T.Resize((image_size, image_size)),
-                T.RandomHorizontalFlip(),
-                T.RandomVerticalFlip(),
-                T.RandomRotation(360),
-                T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+               # T.RandomHorizontalFlip(),
+               # T.RandomVerticalFlip(),
+               # T.RandomRotation(360),
+               # T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
                 T.ToTensor(),
-                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                T.Normalize(self.data_mean, self.data_std),
             ])
         else:
             self.transforms = T.Compose([
                 T.Resize((image_size, image_size)),
                 T.ToTensor(),
-                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+                T.Normalize(self.data_mean, self.data_std),
             ])
 
         print(f"[{mode}] {len(self.image_paths)} images loaded from {image_dir}")
@@ -76,3 +79,9 @@ def get_dataloaders(data_dir, image_size=256, batch_size=16, num_workers=4):
         num_workers=num_workers, pin_memory=True
     )
     return train_loader, val_loader, test_loader
+
+if __name__ == "__main__":
+    load_dotenv()
+    image_dir = os.path.join(os.getenv("DATASET_PATH"), "train")
+    mean, std = get_data_stats(image_dir)
+    print(f"Mean: {mean}\nStandard Deviation: {std}")
