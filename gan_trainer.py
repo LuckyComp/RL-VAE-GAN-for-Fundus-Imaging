@@ -105,8 +105,7 @@ def val_one_epoch(encoder, generator, discriminator, perceptual_loss_fn, loader,
 
 
 if __name__ == "__main__":
-    DEVICE         = "cuda" if torch.cuda.is_available() else "cpu" 
-    LEARNING_RATE  = 1e-4  
+    DEVICE         = "cuda" if torch.cuda.is_available() else "cpu"  
     CHECKPOINT_DIR = "./models/saved/checkpoints"
     SAVE_EVERY     = 10    
     EPOCHS         = int(input("Enter number of training epochs: "))
@@ -116,7 +115,7 @@ if __name__ == "__main__":
 
     train_loader, val_loader, _ = get_dataloaders(
         DATASET_PATH,
-        batch_size  = 8,
+        batch_size  = 4,
         num_workers = 4
     )
 
@@ -125,8 +124,8 @@ if __name__ == "__main__":
     discriminator      = Discriminator().to(DEVICE)         
     perceptual_loss_fn = PerceptualLoss().to(DEVICE)        
 
-    optimizer_G = optim.Adam(generator.parameters(),     lr=LEARNING_RATE, betas=(0.9, 0.999))
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.999))
+    optimizer_G = optim.Adam(generator.parameters(),     lr=2e-4, betas=(0.9, 0.999))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=1e-5, betas=(0.9, 0.999))
 
     for epoch in range(1, EPOCHS + 1):
 
