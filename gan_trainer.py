@@ -1,3 +1,4 @@
+from torch.optim.lr_scheduler import StepLR
 from models.gan import Generator, Discriminator, PerceptualLoss, generator_loss, discriminator_loss
 from models.varautoencoder import Encoder, reparameterize
 from dataloader import get_dataloaders
@@ -54,7 +55,7 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
 
         synth_pred_of_gan = discriminator(synthetic)
         g_loss, adv_loss, perc_loss = generator_loss(
-            synth_pred_of_gan, synthetic, batch, perceptual_loss_fn
+            synth_pred_of_gan, synthetic, batch, perceptual_loss_fn, lambda_percept=1.0
         )
         g_loss.backward()                               
         torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
@@ -125,7 +126,9 @@ if __name__ == "__main__":
     perceptual_loss_fn = PerceptualLoss().to(DEVICE)        
 
     optimizer_G = optim.Adam(generator.parameters(),     lr=2e-4, betas=(0.9, 0.999))
-    optimizer_D = optim.Adam(discriminator.parameters(), lr=1e-5, betas=(0.9, 0.999))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=5e-5, betas=(0.9, 0.999))
+    scheduler_G = StepLR(optimizer_G, step_size=20, gamma=0.5)
+    scheduler_D = StepLR(optimizer_D, step_size=20, gamma=0.5)
 
     for epoch in range(1, EPOCHS + 1):
 
@@ -138,6 +141,9 @@ if __name__ == "__main__":
             encoder, generator, discriminator, perceptual_loss_fn,
             val_loader, DEVICE
         )
+
+        scheduler_G.step()
+        scheduler_D.step()
 
         print(
             f"Epoch {epoch:>4} | "

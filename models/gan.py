@@ -28,6 +28,7 @@ class PixelShuffleLayer(nn.Module): #pixel shuffle is used to upscale rather, al
         self.block = nn.Sequential(
             nn.Conv2d(in_channels, in_channels*(scale_factor**2), 3, padding=1), #Upscaling with convolution having a scale factor of scale_factor ^ 2
             nn.PixelShuffle(scale_factor), #The upscaling leads to artifacting, to solve this we introduce pixel shuffle
+            nn.BatchNorm2d(in_channels),
             nn.PReLU()
         )
 
@@ -123,7 +124,6 @@ class Discriminator(nn.Module):
             nn.Linear(base_channels * 8 * 4 * 4, 1024),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(1024, 1),
-            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -147,11 +147,11 @@ class PerceptualLoss(nn.Module):
         return nn.functional.mse_loss(real_features, synth_features)
 
 def generator_loss(disc_preds, synthetic_data, real_data, vgg_loss_fn, lambda_percept=0.006):
-    adversarial_loss = nn.functional.binary_cross_entropy(disc_preds, torch.ones_like(disc_preds))
+    adversarial_loss = nn.functional.binary_cross_entropy_with_logits(disc_preds, torch.ones_like(disc_preds))
     percept_loss = vgg_loss_fn(real_data, synthetic_data)
     return adversarial_loss + lambda_percept*percept_loss, adversarial_loss, percept_loss
 
 def discriminator_loss(real_preds, synth_preds):
-    real_loss = nn.functional.binary_cross_entropy(real_preds, torch.full_like(real_preds, 0.9))
-    synth_loss = nn.functional.binary_cross_entropy(synth_preds, torch.zeros_like(synth_preds))
+    real_loss = nn.functional.binary_cross_entropy_with_logits(real_preds, torch.full_like(real_preds, 0.9))
+    synth_loss = nn.functional.binary_cross_entropy_with_logits(synth_preds, torch.zeros_like(synth_preds))
     return (real_loss + synth_loss)/2

@@ -1,4 +1,5 @@
 import torch
+import ast
 import os
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
@@ -32,9 +33,6 @@ class FundusDataset(Dataset):
             if f.lower().endswith((".jpg", ".jpeg", ".png"))
         ])
         
-        self.data_mean, self.data_std = os.getenv("MEAN"), os.getenv("STD")
-        print(f"Data Stats Loaded:\nMean: {self.data_mean}\nStandard Deviation: {self.data_std}")
-
         if mode == "train":
             self.transforms = T.Compose([
                 T.Resize((image_size, image_size)),
@@ -43,13 +41,13 @@ class FundusDataset(Dataset):
                # T.RandomRotation(360),
                # T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
                 T.ToTensor(),
-                T.Normalize(self.data_mean, self.data_std),
+                T.Normalize(mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]),
             ])
         else:
             self.transforms = T.Compose([
                 T.Resize((image_size, image_size)),
                 T.ToTensor(),
-                T.Normalize(self.data_mean, self.data_std),
+                T.Normalize(mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]),
             ])
 
         print(f"[{mode}] {len(self.image_paths)} images loaded from {image_dir}")
