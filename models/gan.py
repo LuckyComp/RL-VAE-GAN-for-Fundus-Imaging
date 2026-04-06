@@ -48,7 +48,7 @@ class Generator(nn.Module):
         self.fc = nn.Linear(latent_dim, 512*4*4)  #inital fully connected layer
 
         self.initial_convolution = nn.Sequential(
-            nn.Conv2d(512, self.base_channels, 9, padding=4), #initial convolution layer
+            nn.Conv2d(512, self.base_channels, 3, padding=4), #initial convolution layer
             nn.PReLU()
         )
 
@@ -66,7 +66,7 @@ class Generator(nn.Module):
         )
 
         self.output_conv = nn.Sequential(
-            nn.Conv2d(self.base_channels, 3, 9, padding=4), #final convolution layer
+            nn.Conv2d(self.base_channels, 3, 3, padding=4), #final convolution layer
             nn.Tanh() #tan hyperbolic activation function
         )
 

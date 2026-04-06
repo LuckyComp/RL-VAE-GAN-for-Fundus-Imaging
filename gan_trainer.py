@@ -55,7 +55,7 @@ def train_one_epoch(encoder, generator, discriminator, perceptual_loss_fn,
 
         synth_pred_of_gan = discriminator(synthetic)
         g_loss, adv_loss, perc_loss = generator_loss(
-            synth_pred_of_gan, synthetic, batch, perceptual_loss_fn, lambda_percept=1.0
+            synth_pred_of_gan, synthetic, batch, perceptual_loss_fn, lambda_percept=0.006
         )
         g_loss.backward()                               
         torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
