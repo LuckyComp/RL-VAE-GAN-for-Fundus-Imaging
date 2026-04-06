@@ -105,10 +105,10 @@ class VAE(nn.Module):
 
 def elbo_loss(recon, target, mu, log_var, beta=1.0):
     #Here recon_loss is a mix of mse and ssim loss to check not just pixel to pixel difference but also semantic differences
-    recon_loss = 1.0*nn.functional.mse_loss(recon, target, reduction='mean') +  0.5*(1 - ssim(recon, target)) #Calculate Reconstruction Loss
+    recon_loss = 1000.0*nn.functional.mse_loss(recon, target, reduction='mean') +  0.5*(1 - ssim(recon, target)) #Calculate Reconstruction Loss
     kl_loss = -0.5*torch.mean(1 + log_var - mu.pow(2) - log_var.exp()) #Calculate KL Divergence Loss
 
     return recon_loss + beta*kl_loss, recon_loss, kl_loss #Return ELBO Loss
 
-def kl_annealing(epoch, warmup_epochs=50, max_beta=1.0):
+def kl_annealing(epoch, warmup_epochs=50, max_beta=0.1):
     return min(max_beta, (epoch/warmup_epochs)*max_beta) #Calculates the rate of annealing
