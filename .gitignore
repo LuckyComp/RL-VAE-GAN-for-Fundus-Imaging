@@ -1,6 +1,8 @@
 venv
+.venv
 Raw_datasets
 .env
 __pycache__/
 models/__pycache__/
 models/saved/
+Dataset Eye/
