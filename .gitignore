@@ -3,9 +3,11 @@ Raw_datasets
 .env
 __pycache__/
 models/__pycache__/
+.python-version
 models/saved/
 Dataset Eye/
 checkpoints/
+inference_outputs/
 samples/
 *.pth
 *.pt
