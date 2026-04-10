@@ -48,9 +48,9 @@ if __name__ == "__main__":
     load_dotenv()
     
     # 1. Configuration
-    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+    DEVICE = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
     # Update this to whichever epoch you want to test (e.g., generator_epoch300.pth or generator_final.pth)
-    GENERATOR_WEIGHTS = "./models/saved/checkpoints/generator_epoch150.pth" 
+    GENERATOR_WEIGHTS = "./models/saved/checkpoints/generator_epoch10.pth" 
     ENCODER_WEIGHTS = os.getenv("ENCODER_PATH")
     DATASET_PATH = os.getenv("DATASET_PATH")
     OUTPUT_DIR = "./inference_outputs"
