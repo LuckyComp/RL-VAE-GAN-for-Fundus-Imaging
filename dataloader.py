@@ -5,6 +5,7 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from dotenv import load_dotenv
+import json
 
 def get_data_stats(image_dir, image_size=256):
     transform = T.Compose([T.Resize((image_size, image_size)), T.ToTensor()])
@@ -27,19 +28,30 @@ def get_data_stats(image_dir, image_size=256):
 
 class FundusDataset(Dataset):
     def __init__(self, image_dir, image_size=256, mode="train"):
+        self.image_dir = image_dir
+        self.mode = mode
         self.image_paths = sorted([
             os.path.join(image_dir, f)
             for f in os.listdir(image_dir)
             if f.lower().endswith((".jpg", ".jpeg", ".png"))
         ])
         
+        self.labels_dict = {}
+        if self.mode == "train":
+            labels_file = "cluster_labels.json"
+            if os.path.exists(labels_file):
+                with open(labels_file, "r") as f:
+                    self.labels_dict = json.load(f)
+            else:
+                print(f"Warning: {labels_file} not found. Defaulting all labels to 0.")
+
         if mode == "train":
             self.transforms = T.Compose([
                 T.Resize((image_size, image_size)),
-               # T.RandomHorizontalFlip(),
-               # T.RandomVerticalFlip(),
-               # T.RandomRotation(360),
-               # T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1, hue=0.05),
+                T.RandomHorizontalFlip(),
+                T.RandomVerticalFlip(),
+                T.RandomRotation(15), # Gentle rotation
+                T.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.02),
                 T.ToTensor(),
                 T.Normalize(mean=[0.5,0.5,0.5], std=[0.5,0.5,0.5]),
             ])
@@ -56,8 +68,17 @@ class FundusDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img = Image.open(self.image_paths[idx]).convert("RGB")
-        return self.transforms(img)
+        img_path = self.image_paths[idx]
+        filename = os.path.basename(img_path)
+        
+        img = Image.open(img_path).convert("RGB")
+        tensor_img = self.transforms(img)
+
+        if self.mode == "train":
+            label = self.labels_dict.get(filename, 0) 
+            return tensor_img, torch.tensor(label, dtype=torch.long)
+        else:
+            return tensor_img
 
 
 def get_dataloaders(data_dir, image_size=256, batch_size=16, num_workers=4):

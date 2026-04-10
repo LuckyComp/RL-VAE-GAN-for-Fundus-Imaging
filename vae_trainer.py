@@ -84,4 +84,6 @@ if __name__ == "__main__":
 
     #Save final weights into .pth file
     torch.save(model.encoder.state_dict(), "./models/saved/encoder_pretrained.pth")
+    torch.save(model.state_dict(), "./models/saved/vae_full_checkpoint.pth") # ADD THIS
+    print("Training complete. Encoder and Full VAE saved.")
     print("Training complete. Encoder saved.")
