@@ -143,41 +143,62 @@ if __name__ == "__main__":
 
     train_loader, val_loader, _ = get_dataloaders(
         DATASET_PATH,
-        batch_size  = 4, 
-        num_workers = 4
+        batch_size  = 64, # Bumped to 64 for your workstation run
+        num_workers = 8   # Bumped to 8 for NVMe loading
     )
 
-    generator          = Generator().to(DEVICE)             
-    critic             = Critic().to(DEVICE)         
+    # 1. Initialize Models
+    generator = Generator().to(DEVICE)             
+    critic    = Critic().to(DEVICE)         
+    encoder   = load_encoder(ENCODER_PATH, DEVICE) 
+    perceptual_loss_fn = PerceptualLoss().to(DEVICE)
+
+    # 2. Initialize Optimizers and Schedulers FIRST (Required before loading states)
+    optimizer_G = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
+    optimizer_C = optim.Adam(critic.parameters(),    lr=1e-5, betas=(0.0, 0.9))
+    scheduler_G = StepLR(optimizer_G, step_size=50, gamma=0.8)
+    scheduler_C = StepLR(optimizer_C, step_size=20, gamma=0.8)
 
     start_epoch = 1
     resume_input = input("Enter epoch to resume from (Press Enter or 0 to start fresh): ").strip()
 
+    # 3. Safe Loading Logic (Handles both Old and New checkpoint formats)
     if resume_input and resume_input.isdigit() and int(resume_input) > 0:
         resume_epoch = int(resume_input)
-        gen_path = os.path.join(CHECKPOINT_DIR, f"generator_epoch{resume_epoch}.pth")
-        disc_path = os.path.join(CHECKPOINT_DIR, f"discriminator_epoch{resume_epoch}.pth")
         
-        if os.path.exists(gen_path) and os.path.exists(disc_path):
-            generator.load_state_dict(torch.load(gen_path, map_location=DEVICE, weights_only=True))
-            critic.load_state_dict(torch.load(disc_path, map_location=DEVICE, weights_only=True))
-            print(f"Successfully loaded checkpoints from Epoch {resume_epoch}.")
-            start_epoch = resume_epoch + 1 
+        unified_path = os.path.join(CHECKPOINT_DIR, f"training_state_epoch{resume_epoch}.pth")
+        old_gen_path = os.path.join(CHECKPOINT_DIR, f"generator_epoch{resume_epoch}.pth")
+        old_disc_path = os.path.join(CHECKPOINT_DIR, f"discriminator_epoch{resume_epoch}.pth")
+        
+        # Check for NEW unified format first
+        if os.path.exists(unified_path):
+            print(f"Loading Unified Checkpoint from Epoch {resume_epoch}...")
+            checkpoint = torch.load(unified_path, map_location=DEVICE, weights_only=False)
+            
+            generator.load_state_dict(checkpoint['generator_state_dict'])
+            critic.load_state_dict(checkpoint['critic_state_dict'])
+            optimizer_G.load_state_dict(checkpoint['optimizer_G_state_dict'])
+            optimizer_C.load_state_dict(checkpoint['optimizer_C_state_dict'])
+            scheduler_G.load_state_dict(checkpoint['scheduler_G_state_dict'])
+            scheduler_C.load_state_dict(checkpoint['scheduler_C_state_dict'])
+            scaler.load_state_dict(checkpoint['scaler_state_dict'])
+            
+            start_epoch = checkpoint['epoch'] + 1
+            print("Successfully restored full training momentum.")
+            
+        # Fallback to OLD format (For your current 120-epoch weights)
+        elif os.path.exists(old_gen_path) and os.path.exists(old_disc_path):
+            print(f"Old checkpoint format detected for Epoch {resume_epoch}. Loading weights only...")
+            generator.load_state_dict(torch.load(old_gen_path, map_location=DEVICE, weights_only=True))
+            critic.load_state_dict(torch.load(old_disc_path, map_location=DEVICE, weights_only=True))
+            start_epoch = resume_epoch + 1
+            print("Warning: Optimizers starting fresh. Gradients may be volatile for a few epochs.")
+            
         else:
-            print(f"Error: Checkpoints for Epoch {resume_epoch} not found. Starting fresh.")
+            print(f"Error: No checkpoints found for Epoch {resume_epoch}. Starting fresh.")
             start_epoch = 1
 
-    encoder            = load_encoder(ENCODER_PATH, DEVICE) 
-    perceptual_loss_fn = PerceptualLoss().to(DEVICE)        
-
-    # CHANGED: WGAN-GP strictly requires betas=(0.0, 0.9) to prevent momentum from interfering with the gradient penalty
-    # Increased Learning Rate slightly to 1e-4 which is standard for WGAN
-    optimizer_G = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
-    optimizer_C = optim.Adam(critic.parameters(),    lr=1e-4, betas=(0.0, 0.9))
-    
-    scheduler_G = StepLR(optimizer_G, step_size=50, gamma=0.8)
-    scheduler_C = StepLR(optimizer_C, step_size=20, gamma=0.8)
-
+    # 4. Training Loop
     target_epoch = start_epoch + EPOCHS
     for epoch in range(start_epoch, target_epoch):
 
@@ -202,18 +223,27 @@ if __name__ == "__main__":
             f"Val G={val_g_loss:.4f} C={val_c_loss:.4f}"
         )
 
+        # 5. Safe Save Logic
         if epoch % SAVE_EVERY == 0:
-            torch.save(
-                generator.state_dict(),
-                os.path.join(CHECKPOINT_DIR, f"generator_epoch{epoch}.pth")
-            )
-            torch.save(
-                critic.state_dict(),
-                # Keeping the old filename pattern to maintain compatibility with your run.py script
-                os.path.join(CHECKPOINT_DIR, f"discriminator_epoch{epoch}.pth")
-            )
-            print(f"Checkpoint saved at epoch {epoch}")
+            # Save the unified state dictionary
+            full_state = {
+                'epoch': epoch,
+                'generator_state_dict': generator.state_dict(),
+                'critic_state_dict': critic.state_dict(),
+                'optimizer_G_state_dict': optimizer_G.state_dict(),
+                'optimizer_C_state_dict': optimizer_C.state_dict(),
+                'scheduler_G_state_dict': scheduler_G.state_dict(),
+                'scheduler_C_state_dict': scheduler_C.state_dict(),
+                'scaler_state_dict': scaler.state_dict()
+            }
+            torch.save(full_state, os.path.join(CHECKPOINT_DIR, f"training_state_epoch{epoch}.pth"))
+            
+            # Save a standalone Generator weights file for easy use in your inference scripts
+            torch.save(generator.state_dict(), os.path.join(CHECKPOINT_DIR, f"generator_epoch{epoch}.pth"))
+            
+            print(f"[*] Full training state saved at epoch {epoch}")
 
+    # Final Save
     torch.save(generator.state_dict(), os.path.join(CHECKPOINT_DIR, "generator_final.pth"))
     torch.save(critic.state_dict(),    os.path.join(CHECKPOINT_DIR, "discriminator_final.pth"))
     print("Training complete. Final models saved.")

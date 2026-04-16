@@ -3,6 +3,26 @@ from torch import nn
 import torchvision.models as models
 import torch.autograd as autograd
 
+def create_circular_mask(h, w, center=None, radius=None):
+    """
+    Generates a 2D boolean mask for a circular region.
+    """
+    if center is None: # Use the exact middle
+        center = (int(w/2), int(h/2))
+    if radius is None: # Use the smallest distance to the edge
+        radius = min(center[0], center[1], w-center[0], h-center[1])
+
+    # Create coordinate grids
+    # 'ij' indexing ensures it matches standard (H, W) tensor shapes
+    Y, X = torch.meshgrid(torch.arange(h), torch.arange(w), indexing='ij')
+    
+    # Calculate squared Euclidean distance from the center
+    dist_from_center = torch.sqrt((X - center[0])**2 + (Y - center[1])**2)
+
+    # Return a mask where pixels inside the radius are 1, and outside are 0
+    mask = dist_from_center <= radius
+    return mask.float()
+
 # ==========================================
 # 1. GENERATOR COMPONENTS
 # ==========================================
@@ -79,6 +99,8 @@ class Generator(nn.Module):
             nn.Conv2d(self.base_channels, 3, 3, padding=1), 
             nn.Tanh() # Outputs [-1, 1]
         )
+        self.mask = create_circular_mask(256,256)
+        self.register_buffer('retina_mask',self.mask)
 
     def forward(self, z, labels):
         c = self.label_embedding(labels)
@@ -93,8 +115,7 @@ class Generator(nn.Module):
         x = self.postResConv(x)
         x = x + residual 
         x = self.upsample(x)
-
-        return self.output_conv(x)
+        return self.output_conv(x)*self.retina_mask
 
 
 # ==========================================

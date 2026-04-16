@@ -58,7 +58,7 @@ if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Update this to whichever epoch you want to test
-    GENERATOR_WEIGHTS = "./models/saved/checkpoints/generator_epoch310.pth" 
+    GENERATOR_WEIGHTS = "./models/saved/checkpoints/generator_epoch190.pth" 
     ENCODER_WEIGHTS = os.getenv("ENCODER_PATH", "./models/saved/encoder_pretrained.pth")
     DATASET_PATH = os.getenv("DATASET_PATH")
     OUTPUT_DIR = "./inference_outputs"
