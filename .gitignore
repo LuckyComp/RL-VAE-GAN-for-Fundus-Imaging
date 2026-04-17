@@ -13,3 +13,4 @@ samples/
 *.pt
 *.png
 cluster_labels.json
+synthetic_dataset
