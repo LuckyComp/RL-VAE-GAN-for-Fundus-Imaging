@@ -4,6 +4,7 @@ import torchvision.models as models
 import torch.autograd as autograd
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
+from torchmetrics.image import StructuralSimilarityIndexMeasure
 # ==========================================
 # 1. GENERATOR COMPONENTS
 # ==========================================
@@ -296,3 +297,41 @@ class PerceptualLoss(nn.Module):
         fake_features = self.feature_extractor(fake_img)
 
         return self.criterion(fake_features, real_features)
+
+def create_static_macula_mask(image_size=256, disc_center=(128, 200), radius=20, boost_weight=3.0, right_eye=True):
+    """
+    Creates a Gaussian multiplier mask to penalize macula reconstruction errors.
+    Defaults assume a 256x256 image with the optic disc on the right side.
+    """
+    mask = torch.ones(1, 1, image_size, image_size)
+    dd_pixel_dist = 30 
+    
+    # Calculate macula position (2.5 DD away on the temporal side, slightly inferior)
+    macula_x = disc_center[1] - (2.5 * dd_pixel_dist) if right_eye else disc_center[1] + (2.5 * dd_pixel_dist)
+    macula_y = disc_center[0] + 5  
+    
+    y, x = torch.meshgrid(torch.arange(image_size), torch.arange(image_size), indexing='ij')
+    dist_sq = (x - macula_x)**2 + (y - macula_y)**2
+    gaussian = torch.exp(-dist_sq / (2 * radius**2))
+    
+    mask += gaussian * (boost_weight - 1.0)
+    return mask
+
+class MaskedL1Loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.criterion = nn.L1Loss(reduction='none') 
+
+    def forward(self, fake, real, mask):
+        loss = self.criterion(fake, real)
+        masked_loss = loss * mask
+        return masked_loss.mean()
+
+class SSIMLoss(nn.Module):
+    def __init__(self, data_range=2.0, device="cuda"):
+        super().__init__()
+        # data_range=2.0 because your Generator output uses Tanh [-1, 1]
+        self.ssim_module = StructuralSimilarityIndexMeasure(data_range=data_range).to(device)
+
+    def forward(self, fake, real):
+        return 1.0 - self.ssim_module(fake, real)
