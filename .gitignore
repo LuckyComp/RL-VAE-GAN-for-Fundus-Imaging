@@ -22,3 +22,4 @@ samples/
 *.png
 cluster_labels.json
 synthetic_dataset
+test_scripts/
