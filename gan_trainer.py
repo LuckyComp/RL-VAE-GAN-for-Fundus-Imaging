@@ -1,6 +1,9 @@
 from numpy import long
 from torch.optim.lr_scheduler import StepLR
-from models.gan import Generator, Critic, PerceptualLoss, compute_gradient_penalty
+from models.gan import (
+    Generator, Critic, PerceptualLoss, compute_gradient_penalty,
+    create_static_macula_mask, MaskedL1Loss, SSIMLoss
+)
 from models.varautoencoder import Encoder, reparameterize
 from dataloader import get_dataloaders
 import torch
@@ -35,8 +38,11 @@ def train_one_epoch(
     encoder,
     generator,
     generator_ema,
-    critic,
+    critic, 
     perceptual_loss_fn,
+    masked_l1_fn,
+    ssim_fn,
+    macula_mask,
     optimizer_G,
     optimizer_C,
     loader,
@@ -118,14 +124,19 @@ def train_one_epoch(
             adv_loss = -synth_pred_of_gan.mean()
             perc_loss = perceptual_loss_fn(batch, synthetic)
 
-            if epoch < 10:
-                lambda_perc = 10.0
-            elif epoch < 20:
-                lambda_perc = 5.0
-            else:
-                lambda_perc = 0.5  # The Critic takes over macro-anatomy
+            l1_loss = masked_l1_fn(synthetic, batch, macula_mask)
+            ssim_loss = ssim_fn(synthetic, batch)
 
-            g_loss = adv_loss + (lambda_perc * perc_loss)  # Combine losses
+            if epoch < 10:
+                lambda_perc, lambda_l1, lambda_ssim = 10.0, 10.0, 5.0
+            elif epoch < 20:
+                lambda_perc, lambda_l1, lambda_ssim = 5.0, 5.0, 2.0
+            else:
+                # Critic handles macro geometry, L1/SSIM force the macula dip
+                lambda_perc, lambda_l1, lambda_ssim = 0.5, 2.0, 1.0  
+
+            # Combine all losses
+            g_loss = adv_loss + (lambda_perc * perc_loss) + (lambda_l1 * l1_loss) + (lambda_ssim * ssim_loss)
 
         scaler.scale(g_loss).backward()
         scaler.unscale_(optimizer_G)
@@ -162,7 +173,7 @@ def train_one_epoch(
 
 
 def val_one_epoch(
-    encoder, generator, critic, perceptual_loss_fn, loader, device, epoch
+    encoder, generator, critic, perceptual_loss_fn, masked_l1_fn, ssim_fn, macula_mask, loader, device, epoch
 ):
     generator.eval()
     critic.eval()
@@ -194,14 +205,19 @@ def val_one_epoch(
             adv_loss = -synth_preds.mean()
             perc_loss = perceptual_loss_fn(batch, synthetic)
 
-            if epoch < 10:
-                lambda_perc = 10.0
-            elif epoch < 20:
-                lambda_perc = 5.0
-            else:
-                lambda_perc = 0.5  # The Critic takes over macro-anatomy
+            l1_loss = masked_l1_fn(synthetic, batch, macula_mask)
+            ssim_loss = ssim_fn(synthetic, batch)
 
-            g_loss = adv_loss + (lambda_perc * perc_loss)  # Combine losses
+            if epoch < 10:
+                lambda_perc, lambda_l1, lambda_ssim = 10.0, 10.0, 5.0
+            elif epoch < 20:
+                lambda_perc, lambda_l1, lambda_ssim = 5.0, 5.0, 2.0
+            else:
+                # Critic handles macro geometry, L1/SSIM force the macula dip
+                lambda_perc, lambda_l1, lambda_ssim = 0.5, 2.0, 1.0  
+
+            # Combine all losses
+            g_loss = adv_loss + (lambda_perc * perc_loss) + (lambda_l1 * l1_loss) + (lambda_ssim * ssim_loss)
 
             total_g_loss += g_loss.item()
             total_c_loss += c_loss.item()
@@ -235,6 +251,9 @@ if __name__ == "__main__":
     critic = Critic().to(DEVICE)
     encoder = load_encoder(ENCODER_PATH, DEVICE)
     perceptual_loss_fn = PerceptualLoss().to(DEVICE)
+    masked_l1_fn = MaskedL1Loss().to(DEVICE)
+    ssim_fn = SSIMLoss(data_range=2.0, device=DEVICE)
+    macula_mask = create_static_macula_mask(image_size=256, right_eye=True).to(DEVICE)
 
     # 2. Initialize Optimizers and Schedulers FIRST (Required before loading states)
     optimizer_G = optim.Adam(generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
@@ -330,22 +349,15 @@ if __name__ == "__main__":
     target_epoch = start_epoch + EPOCHS
     for epoch in range(start_epoch, target_epoch):
         g_loss, c_loss, adv_loss, perc_loss, real_preds, synth_preds = train_one_epoch(
-            encoder,
-            generator,
-            generator_ema,
-            critic,
-            perceptual_loss_fn,
-            optimizer_G,
-            optimizer_C,
-            train_loader,
-            DEVICE,
-            scaler,
-            epoch,
-            target_epoch,
+            encoder, generator, generator_ema, critic,
+            perceptual_loss_fn, masked_l1_fn, ssim_fn, macula_mask, 
+            optimizer_G, optimizer_C, train_loader, DEVICE, scaler, epoch, target_epoch,
         )
 
         val_g_loss, val_c_loss = val_one_epoch(
-            encoder, generator, critic, perceptual_loss_fn, val_loader, DEVICE, epoch
+            encoder, generator, critic, 
+            perceptual_loss_fn, masked_l1_fn, ssim_fn, macula_mask, 
+            val_loader, DEVICE, epoch
         )
 
         scheduler_G.step()
