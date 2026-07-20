@@ -79,7 +79,11 @@ if __name__ == "__main__":
     )  # try to initialize cuda as base device for training
     LEARNING_RATE = 1e-4  # learning rate of optimizer
     WARMUP_EPOCHS = 50  # number of warmup epochs
-    EPOCHS = int(input("Enter number of training epochs: "))
+    
+    # Setup directories
+    os.makedirs("./models/saved", exist_ok=True)
+    CHECKPOINT_DIR = "./models/saved"
+    SAVE_EVERY = 10  # Save a checkpoint every 10 epochs
 
     print(f"Training on {DEVICE}")
 
@@ -90,8 +94,47 @@ if __name__ == "__main__":
     model = VAE().to(DEVICE)  # load model to GPU memory
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # initialize optimizer
 
+    start_epoch = 1
+
+    # --- NEW: Dynamic Checkpoint Loading ---
+    resume_input = input("Enter epoch to resume from (Press Enter or 0 to start fresh): ").strip()
+    
+    if resume_input and resume_input.isdigit() and int(resume_input) > 0:
+        resume_epoch = int(resume_input)
+        checkpoint_path = os.path.join(CHECKPOINT_DIR, f"vae_checkpoint_epoch{resume_epoch}.pth")
+        
+        # Fallback to check if they are trying to load the final checkpoint directly
+        if not os.path.exists(checkpoint_path):
+            fallback_path = os.path.join(CHECKPOINT_DIR, "vae_full_checkpoint.pth")
+            if os.path.exists(fallback_path):
+                checkpoint_path = fallback_path
+                print(f"Epoch-specific checkpoint not found. Falling back to {fallback_path}")
+
+        if os.path.exists(checkpoint_path):
+            print(f"Loading VAE Checkpoint from {checkpoint_path}...")
+            checkpoint = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+            
+            # 1. Check if it's the NEW format (Dictionary containing states)
+            if "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                start_epoch = checkpoint["epoch"] + 1
+                print("Successfully restored VAE model and optimizer momentum.")
+            
+            # 2. Check if it's the OLD format (Raw state_dict)
+            else:
+                model.load_state_dict(checkpoint)
+                start_epoch = resume_epoch + 1
+                print("[!] Loaded older checkpoint format. Optimizer momentum could not be restored and will start fresh.")
+        else:
+            print(f"Error: No checkpoint found. Starting fresh.")
+            start_epoch = 1
+            
+    # Ask for total epochs after resolving the start epoch
+    target_epochs = int(input(f"Enter total number of epochs to reach (currently at epoch {start_epoch - 1}): "))
+
     # per epoch training
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(start_epoch, target_epochs + 1):
         beta = kl_annealing(
             epoch, warmup_epochs=WARMUP_EPOCHS, max_beta=1.0
         )  # get annealed beta values
@@ -111,8 +154,25 @@ if __name__ == "__main__":
             f"Val Loss={val_loss:.2f} (Recon={val_recon:.2f}, KL={val_kl:.2f})"
         )
 
+        # --- NEW: Periodic Checkpoint Saving ---
+        if epoch % SAVE_EVERY == 0:
+            checkpoint_state = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict()
+            }
+            torch.save(checkpoint_state, os.path.join(CHECKPOINT_DIR, f"vae_checkpoint_epoch{epoch}.pth"))
+            print(f"[*] Checkpoint saved at epoch {epoch}")
+
     # Save final weights into .pth file
-    torch.save(model.encoder.state_dict(), "./models/saved/encoder_pretrained.pth")
-    torch.save(model.state_dict(), "./models/saved/vae_full_checkpoint.pth")  # ADD THIS
+    torch.save(model.encoder.state_dict(), os.path.join(CHECKPOINT_DIR, "encoder_pretrained.pth"))
+    
+    # Save the full final checkpoint including optimizer state
+    final_checkpoint = {
+        "epoch": target_epochs,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict()
+    }
+    torch.save(final_checkpoint, os.path.join(CHECKPOINT_DIR, "vae_full_checkpoint.pth"))
+    
     print("Training complete. Encoder and Full VAE saved.")
-    print("Training complete. Encoder saved.")
