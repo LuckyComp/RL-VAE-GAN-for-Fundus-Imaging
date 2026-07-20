@@ -206,18 +206,24 @@ class Critic(nn.Module):
             nn.Linear(1024, 1),
         )
 
-    def forward(self, x, labels):
+    def forward(self, x, labels, return_features=False):
         c = self.label_embedding(labels).view(-1, 1, self.image_size, self.image_size)
-        x = torch.cat([x, c], dim=1)  # 4-Channel input
+        x = torch.cat([x, c], dim=1)
 
-        # MANDATORY: The input tensor must require gradients for checkpointing to trigger
         if not x.requires_grad:
             x.requires_grad_()
 
-        # Wrap the heavy sequential block
-        x = checkpoint(self.features, x, use_reentrant=False)
+        # Extract the deep feature maps from the convolutional block
+        features = checkpoint(self.features, x, use_reentrant=False)
+        
+        # Pass features to the classifier for the standard WGAN score
+        validity = self.classifier(features)
 
-        return self.classifier(x)
+        # If feature matching is requested, return both
+        if return_features:
+            return validity, features
+        
+        return validity
 
 
 # 3. WGAN-GP LOSS FUNCTIONS
@@ -271,7 +277,7 @@ class PerceptualLoss(nn.Module):
         super().__init__()
         vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1).features
         # Extract features from the relu2_2 layer
-        self.feature_extractor = nn.Sequential(*list(vgg.children())[:9]).eval()
+        self.feature_extractor = nn.Sequential(*list(vgg.children())[:22]).eval()
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
 
@@ -298,34 +304,6 @@ class PerceptualLoss(nn.Module):
 
         return self.criterion(fake_features, real_features)
 
-def create_static_macula_mask(image_size=256, disc_center=(128, 200), radius=20, boost_weight=3.0, right_eye=True):
-    """
-    Creates a Gaussian multiplier mask to penalize macula reconstruction errors.
-    Defaults assume a 256x256 image with the optic disc on the right side.
-    """
-    mask = torch.ones(1, 1, image_size, image_size)
-    dd_pixel_dist = 30 
-    
-    # Calculate macula position (2.5 DD away on the temporal side, slightly inferior)
-    macula_x = disc_center[1] - (2.5 * dd_pixel_dist) if right_eye else disc_center[1] + (2.5 * dd_pixel_dist)
-    macula_y = disc_center[0] + 5  
-    
-    y, x = torch.meshgrid(torch.arange(image_size), torch.arange(image_size), indexing='ij')
-    dist_sq = (x - macula_x)**2 + (y - macula_y)**2
-    gaussian = torch.exp(-dist_sq / (2 * radius**2))
-    
-    mask += gaussian * (boost_weight - 1.0)
-    return mask
-
-class MaskedL1Loss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.criterion = nn.L1Loss(reduction='none') 
-
-    def forward(self, fake, real, mask):
-        loss = self.criterion(fake, real)
-        masked_loss = loss * mask
-        return masked_loss.mean()
 
 class SSIMLoss(nn.Module):
     def __init__(self, data_range=2.0, device="cuda"):
