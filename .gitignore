@@ -20,6 +20,7 @@ samples/
 *.pth
 *.pt
 *.png
+run.py
 cluster_labels.json
 synthetic_dataset
 test_scripts/
