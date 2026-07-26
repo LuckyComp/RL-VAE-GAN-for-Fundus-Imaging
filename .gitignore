@@ -24,3 +24,4 @@ run.py
 cluster_labels.json
 synthetic_dataset
 test_scripts/
+inference_realesrgan.py
