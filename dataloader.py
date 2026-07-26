@@ -97,7 +97,7 @@ def get_dataloaders(
     and stratified CSV splits.
     """
     # Define paths based on the new unified structure
-    image_dir = os.path.join(data_dir, "normalized_images")
+    image_dir = os.path.join(data_dir, "normalized_images_unified")
     train_csv = os.path.join(data_dir, "train_labels.csv")
     val_csv = os.path.join(data_dir, "val_labels.csv")
     test_csv = os.path.join(data_dir, "test_labels.csv")
