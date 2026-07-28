@@ -1,164 +1,147 @@
+import sys
 import os
+import concurrent.futures
+# Fix imports by appending the parent directory
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch
-import pandas as pd
-import numpy as np
-from torch.utils.data import Dataset, DataLoader, Subset
-from PIL import Image
-import torchvision.transforms as T
+import argparse
 from tqdm import tqdm
+from torch.amp import autocast
+from torchvision.utils import save_image
+from models.gan import Generator, Discriminator
 
+# --- Helper function for Async Saving ---
+def async_save(img_tensor, filepath):
+    save_image(img_tensor, filepath)
 
-class SquareCrop:
-    def __call__(self, image):
-        w, h = image.size
-        min_wh = min(w, h)
-        return T.functional.center_crop(image, min_wh)
+def generate_from_baked(args):
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # Create the single main output directory
+    os.makedirs(args.output_dir, exist_ok=True)
 
-class DRDataset(Dataset):
-    def __init__(self, csv_file, image_dir, image_size=256, mode="train"):
-        self.image_dir = image_dir
-        self.mode = mode
-        self.image_size = image_size
-
-        # Load the CSV file containing image_filename and dr_grade
-        self.df = pd.read_csv(csv_file)
-
-        # Initialize RAM cache lists
-        self.cached_images = []
-        self.cached_labels = []
-
-        print(f"[*] Caching {len(self.df)} {mode.upper()} images into System RAM...")
-
-        # 1. Deterministic Transforms: Applied once before caching to save RAM
-        cache_transforms = T.Compose([SquareCrop(), T.Resize((image_size, image_size))])
-
-        # Load everything into memory during initialization
-        for idx in tqdm(range(len(self.df)), desc=f"Loading {mode} data"):
-            row = self.df.iloc[idx]
-            img_name = row["image_filename"]
-            label = int(row["dr_grade"])
-
-            img_path = os.path.join(self.image_dir, img_name)
-
-            # Read image, convert to RGB, and apply deterministic resizing/cropping
-            img = Image.open(img_path).convert("RGB")
-            img = cache_transforms(img)
-
-            self.cached_images.append(img)
-            self.cached_labels.append(label)
-
-        # 2. Stochastic Transforms: Applied dynamically during __getitem__
-        if mode == "train":
-            self.transforms = T.Compose(
-                [
-                    T.RandomHorizontalFlip(),
-                    T.RandomVerticalFlip(),
-                    T.RandomRotation(15),
-                    T.ColorJitter(
-                        brightness=0.1, contrast=0.1, saturation=0.1, hue=0.02
-                    ),
-                    T.ToTensor(),
-                    T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                ]
-            )
-        else:
-            self.transforms = T.Compose(
-                [
-                    T.ToTensor(),
-                    T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-                ]
-            )
-
-        print(
-            f"[{mode.upper()}] Cache complete. {len(self.cached_images)} images ready."
-        )
-
-    def __len__(self):
-        return len(self.cached_images)
-
-    def __getitem__(self, idx):
-        # Pull the pre-resized PIL image and label directly from RAM
-        img = self.cached_images[idx]
-        label = self.cached_labels[idx]
-
-        # Apply stochastic augmentations on the fly
-        tensor_img = self.transforms(img)
-
-        # Returns the 0-4 DR grade as a PyTorch long tensor
-        return tensor_img, torch.tensor(label, dtype=torch.long)
-
-
-def get_dataloaders(
-    data_dir, batch_size=64, num_workers=8, image_size=256, subset_fraction=1.0
-):
-    """
-    Creates and returns PyTorch DataLoaders using the unified images directory
-    and stratified CSV splits.
-    """
-    # Define paths based on the new unified structure
-    image_dir = os.path.join(data_dir, "normalized_images_unified")
-    train_csv = os.path.join(data_dir, "train_labels.csv")
-    val_csv = os.path.join(data_dir, "val_labels.csv")
-    test_csv = os.path.join(data_dir, "test_labels.csv")
-
-    # 1. Initialize Datasets
-    train_dataset = DRDataset(train_csv, image_dir, image_size=image_size, mode="train")
-    val_dataset = DRDataset(val_csv, image_dir, image_size=image_size, mode="val")
-
-    # 2. Handle Prototype Subset Fraction
-    if subset_fraction < 1.0:
-        np.random.seed(42)
-
-        train_subset_size = int(len(train_dataset) * subset_fraction)
-        train_indices = np.random.choice(
-            len(train_dataset), train_subset_size, replace=False
-        ).tolist()
-        train_dataset = Subset(train_dataset, train_indices)
-
-        val_subset_size = int(len(val_dataset) * subset_fraction)
-        val_indices = np.random.choice(
-            len(val_dataset), val_subset_size, replace=False
-        ).tolist()
-        val_dataset = Subset(val_dataset, val_indices)
-
-        print(f"[*] RUNNING IN SUBSET MODE ({subset_fraction * 100}%)")
-        print(f"[*] Train Size: {train_subset_size} | Val Size: {val_subset_size}")
-
-    # 3. Initialize DataLoaders
-    # Note: If num_workers > 0 with RAM caching, multiprocessing can sometimes duplicate memory.
-    # If you see RAM spikes, drop num_workers to 0 since disk I/O is no longer the bottleneck.
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-        drop_last=True,
+    print("[*] Initializing Models and PyTorch 2.0 Compiler...")
+    
+    # 1. Load and Compile the Generator
+    generator = Generator(base_channels=128).to(DEVICE)
+    gen_checkpoint = torch.load(args.gen_weights, map_location=DEVICE, weights_only=True)
+    generator.load_state_dict(
+        gen_checkpoint.get("generator_state_dict", gen_checkpoint), strict=False
     )
+    generator.eval()
+    generator = torch.compile(generator)  # 20-30% inference speedup
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
+    # 2. Load and Compile the Critic (Discriminator) for Rejection Sampling
+    critic = Discriminator(base_channels=128).to(DEVICE)
+    critic_checkpoint = torch.load(args.critic_weights, map_location=DEVICE, weights_only=True)
+    critic.load_state_dict(
+        critic_checkpoint.get("discriminator_state_dict", critic_checkpoint), strict=False
     )
+    critic.eval()
+    critic = torch.compile(critic)
 
-    # 4. Optional Test Loader Handling
-    test_loader = None
-    if os.path.exists(test_csv):
-        test_dataset = DRDataset(
-            test_csv, image_dir, image_size=image_size, mode="test"
-        )
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True,
-        )
-    else:
-        print(f"[TEST] No test CSV found at {test_csv}.")
+    # 3. Load the Baked Latents
+    baked = torch.load(args.baked_file, weights_only=True)
+    baked_mu = baked["mu"].to(DEVICE)
+    baked_log_var = baked["log_var"].to(DEVICE)
+    baked_labels = baked["labels"].to(DEVICE)
 
-    return train_loader, val_loader, test_loader
+    total_baked_points = len(baked_labels)
+    print(f"[*] Loaded {total_baked_points} baked coordinates.")
+
+    images_generated = 0
+    pbar = tqdm(total=args.total_images, desc=f"Generating (Temp: {args.temperature}, Trunc: {args.truncation})")
+
+    # Initialize the ThreadPool for asynchronous I/O saving
+    # Max workers can be adjusted based on your CPU threads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with torch.no_grad():
+            while images_generated < args.total_images:
+                # We pull a full batch, knowing some might be rejected
+                batch_size = min(args.batch_size, args.total_images - images_generated)
+
+                # --- Randomly select indices from our baked bank ---
+                random_indices = torch.randint(
+                    0, total_baked_points, (batch_size,), device=DEVICE
+                )
+
+                mu = baked_mu[random_indices]
+                log_var = baked_log_var[random_indices]
+                labels = baked_labels[random_indices]
+
+                # --- Apply Truncation Trick & Temperature ---
+                std = torch.exp(0.5 * log_var)
+                epsilon = torch.randn_like(std)
+                # Clamp extreme outliers to guarantee high-density structural sampling
+                epsilon = torch.clamp(epsilon, -args.truncation, args.truncation)
+                z_neighbor = mu + (args.temperature * std * epsilon)
+
+                # --- Generate and Critique ---
+                with autocast(device_type="cuda"):
+                    fake_imgs = generator(z_neighbor, labels)
+                    # WGAN Critic outputs logits (higher is more "real")
+                    critic_scores = critic(fake_imgs, labels).squeeze()
+
+                # --- Critic-Based Rejection Sampling ---
+                # Keep only images that score higher than the threshold
+                valid_mask = critic_scores >= args.critic_threshold
+                
+                # Handle single-element edge cases correctly
+                if valid_mask.dim() == 0:
+                    valid_mask = valid_mask.unsqueeze(0)
+                
+                valid_imgs = fake_imgs[valid_mask]
+                valid_labels = labels[valid_mask]
+                
+                num_accepted = len(valid_imgs)
+                
+                # If nothing passed the critic, skip saving and generate a new batch
+                if num_accepted == 0:
+                    continue
+                
+                # Ensure we do not overshoot the total requested images
+                if images_generated + num_accepted > args.total_images:
+                    num_accepted = args.total_images - images_generated
+                    valid_imgs = valid_imgs[:num_accepted]
+                    valid_labels = valid_labels[:num_accepted]
+
+                # --- Asynchronous Saving ---
+                valid_imgs = (valid_imgs + 1.0) / 2.0
+                valid_imgs = valid_imgs.cpu()
+                valid_labels_cpu = valid_labels.cpu()
+
+                for i in range(num_accepted):
+                    img_tensor = valid_imgs[i]
+                    label_val = valid_labels_cpu[i].item()
+                    
+                    filename = f"synth_{label_val}_{images_generated + i:06d}.png"
+                    filepath = os.path.join(args.output_dir, filename)
+                    
+                    # Submit the save task to the background CPU threads
+                    executor.submit(async_save, img_tensor, filepath)
+
+                images_generated += num_accepted
+                pbar.update(num_accepted)
+
+    pbar.close()
+    print(f"\n[*] Successfully generated and vetted {args.total_images} images.")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    # Path is required via terminal argument
+    parser.add_argument("--gen_weights", type=str, required=True)
+    parser.add_argument("--critic_weights", type=str, required=True)
+    
+    # Existing arguments
+    parser.add_argument("--baked_file", type=str, default="baked_latents.pt")
+    parser.add_argument("--output_dir", type=str, default="synthetic_dataset")
+    parser.add_argument("--total_images", type=int, default=1000)
+    parser.add_argument("--batch_size", type=int, default=128)  
+    parser.add_argument("--temperature", type=float, default=0.3)
+    
+    # New quality-control arguments
+    parser.add_argument("--truncation", type=float, default=2.0, help="Clamps the gaussian noise to prevent edge-case hallucinations")
+    parser.add_argument("--critic_threshold", type=float, default=0.0, help="Minimum WGAN critic score to accept an image")
+
+    generate_from_baked(parser.parse_args())
