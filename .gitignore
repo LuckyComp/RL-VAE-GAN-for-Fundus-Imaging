@@ -6,7 +6,6 @@ __pycache__/
 models/__pycache__/
 .python-version
 models/saved/
-synthetic_dataset
 .python-version
 .pt
 .pth
@@ -22,6 +21,6 @@ samples/
 *.png
 run.py
 cluster_labels.json
-synthetic_dataset
+synthetic_*
 test_scripts/
 inference_realesrgan.py
