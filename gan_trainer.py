@@ -1,4 +1,3 @@
-from numpy import long
 from torch.optim.lr_scheduler import StepLR
 from models.gan import (
     Generator, Critic, PerceptualLoss, compute_gradient_penalty,

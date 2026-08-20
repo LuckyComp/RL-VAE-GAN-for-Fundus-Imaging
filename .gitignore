@@ -14,6 +14,9 @@ test_scripts
 inference_outputs
 Dataset Eye/
 checkpoints/
+vae_inference.py
+standalone_gan_trainer.py
+*.csv
 inference_outputs/
 samples/
 *.pth
